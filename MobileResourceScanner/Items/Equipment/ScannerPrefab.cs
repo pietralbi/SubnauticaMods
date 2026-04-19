@@ -39,7 +39,7 @@ namespace MobileResourceScanner.Items.Equipment
             }
 
             customPrefab.SetRecipe(new RecipeData(ingredientList))
-                .WithFabricatorType(CraftTree.Type.MapRoom);
+                .WithFabricatorType(BepInExPlugin.fabricatorType.Value);
             customPrefab.SetEquipment(EquipmentType.Chip);
             customPrefab.Register();
             KnownTechHandler.UnlockOnStart(customPrefab.Info.TechType);

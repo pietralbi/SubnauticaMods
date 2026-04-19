@@ -17,7 +17,7 @@ using UnityEngine.UI;
 
 namespace MobileResourceScanner
 {
-    [BepInPlugin("aedenthorn.MobileResourceScanner", "MobileResourceScanner", "1.2.1")]
+    [BepInPlugin("aedenthorn.MobileResourceScanner", "MobileResourceScanner", "1.2.2")]
     [BepInDependency("com.snmodding.nautilus")]
     public class BepInExPlugin : BaseUnityPlugin
     {

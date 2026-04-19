@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace CraftFromContainers
 {
-    [BepInPlugin("aedenthorn.CraftFromContainers", "Craft From Containers", "0.3.3")]
+    [BepInPlugin("aedenthorn.CraftFromContainers", "Craft From Containers", "0.3.4")]
     public partial class BepInExPlugin : BaseUnityPlugin
     {
         private static BepInExPlugin context;
@@ -197,6 +197,8 @@ namespace CraftFromContainers
         }
         private static bool CheckStorageType(Component c)
         {
+            if (cachedContainers[c].GetContainerType() != ItemsContainerType.Default)
+                return false;
             string name = GetStorageName(c);
             if (!containerTypes.TryGetValue(name, out bool allowed))
             {
