@@ -1,8 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <AssemblyName>MobileResourceScanner</AssemblyName>
+    <RootNamespace>MobileResourceScanner</RootNamespace>
+    <TargetFramework>net480</TargetFramework>
     <Version>1.0.0</Version>
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)..\</SolutionDir>
+    <GamePath Condition="'$(GamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Subnautica</GamePath>
   </PropertyGroup>
-  <Import Project="$(SolutionDir)\solution_private.targets" />
+  <Import Project="$(SolutionDir)\solution_private.targets" Condition="Exists('$(SolutionDir)\solution_private.targets')" />
   <Import Project="$(SolutionDir)\solution.targets" />
   <ItemGroup>
     <Compile Include="..\AedenthornUtils\AedenthornUtils.cs" Link="AedenthornUtils.cs" />

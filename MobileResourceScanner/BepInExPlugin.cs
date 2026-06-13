@@ -1,8 +1,8 @@
-﻿using BepInEx;
-using BepInEx.Configuration;
+using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 using MobileResourceScanner.Items.Equipment;
+using Nautilus.Handlers;
 using rail;
 using System;
 using System.Collections.Generic;
@@ -25,22 +25,9 @@ namespace MobileResourceScanner
         private static Assembly Assembly { get; } = Assembly.GetExecutingAssembly();
         private static BepInExPlugin context;
 
-        public static ConfigEntry<bool> modEnabled;
-        public static ConfigEntry<bool> isDebug;
 
-        public static ConfigEntry<bool> requireScanned;
-        public static ConfigEntry<bool> alwaysShowAllTechTypes;
-        public static ConfigEntry<float> range;
-        public static ConfigEntry<float> interval;
-        public static ConfigEntry<int> menuButton;
-        public static ConfigEntry<string> currentResource;
-        public static ConfigEntry<string> nameString;
-        public static ConfigEntry<string> descriptionString;
-        public static ConfigEntry<string> menuHeader;
-        public static ConfigEntry<string> ingredients;
-        public static ConfigEntry<string> openMenuString;
-        public static ConfigEntry<CraftTree.Type> fabricatorType;
-        public static ConfigEntry<KeyboardShortcut> menuHotkey;
+        public static ModConfig config;
+
 
         public static bool intervalChanged = true;
 
@@ -52,30 +39,14 @@ namespace MobileResourceScanner
 
         public static void Dbgl(string str = "", LogLevel logLevel = LogLevel.Debug)
         {
-            if (isDebug.Value)
+            if (config?.IsDebug == true)
                 context.Logger.Log(logLevel, str);
         }
         private void Awake()
         {
             context = this;
-            modEnabled = Config.Bind<bool>("General", "Enabled", true, "Enable this mod");
-            isDebug = Config.Bind<bool>("General", "IsDebug", true, "Enable debug logs");
-
-            requireScanned = Config.Bind<bool>("Options", "RequireScanned", false, "Only show resources that have been scanned by the player");
-            alwaysShowAllTechTypes = Config.Bind<bool>("Options", "AlwaysShowAllTechTypes", false, "List every tech type in the game, even those not able to be scanned for");
-            range = Config.Bind<float>("Options", "Range", 500f, "Range (m)");
-            menuButton = Config.Bind<int>("Options", "Button", 1, "Which button to use to open the menu.");
-            interval = Config.Bind<float>("Options", "Interval", 10f, "Interval (s)");
-            currentResource = Config.Bind<string>("Options", "CurrentResource", "None", "Current resource type to scan for");
-            ingredients = Config.Bind<string>("Options", "Ingredients", "ComputerChip:1,Magnetite:1", "Required ingredients, comma separated TechType:Amount pairs");
-            fabricatorType = Config.Bind<CraftTree.Type>("Options", "FabricatorType", CraftTree.Type.MapRoom, "Fabricator to use to craft the chip.");
-            menuHotkey = Config.Bind<KeyboardShortcut>("Options", "MenuHotkey", new KeyboardShortcut(KeyCode.L, new KeyCode[] { KeyCode.LeftShift }), "Key shortcut used to open the menu.");
-
-            nameString = Config.Bind<string>("Text", "NameString", "Mobile Resource Scanner", "Display name");
-            descriptionString = Config.Bind<string>("Text", "DescriptionString", "Equip to enable mobile resource scanning", "Display description");
-            menuHeader = Config.Bind<string>("Text", "MenuHeader", "Select Resource", "Menu header.");
-            openMenuString = Config.Bind<string>("Text", "OpenMenuString", "Switch Resource ({0})", "Tooltip text.");
-            // set project-scoped logger instance
+            config = OptionsPanelHandler.RegisterModOptions<ModConfig>();
+            RestoreCurrentResource();
 
             // Initialize custom prefabs
             InitializePrefabs();
@@ -85,7 +56,7 @@ namespace MobileResourceScanner
         }
         public void Update()
         {
-            if (modEnabled.Value && Player.main?.GetPDA()?.isInUse == false && FPSInputModule.current?.lastGroup == null && menuHotkey.Value.IsDown())
+            if (config.ModEnabled && Player.main?.GetPDA()?.isInUse == false && FPSInputModule.current?.lastGroup == null && IsMenuHotkeyDown())
             {
                 ShowMenu();
             }
@@ -94,6 +65,28 @@ namespace MobileResourceScanner
         private void InitializePrefabs()
         {
             ScannerPrefab.Register();
+        }
+
+        private static bool IsMenuHotkeyDown()
+        {
+            if (!Input.GetKeyDown(config.MenuHotkey))
+                return false;
+
+            return !config.RequireShiftForHotkey || Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        }
+
+        private static void RestoreCurrentResource()
+        {
+            if (!Enum.TryParse(config.CurrentResource, out TechType techType))
+                techType = TechType.None;
+
+            SetCurrentResource(techType);
+        }
+
+        public static void SetCurrentResource(TechType techType)
+        {
+            currentTechType = techType;
+            currentTechName = Language.main.Get(techType);
         }
 
         [HarmonyPatch(typeof(uGUI_ResourceTracker), "IsVisibleNow")]
@@ -122,7 +115,7 @@ namespace MobileResourceScanner
         {
             static bool Prefix(uGUI_ResourceTracker __instance)
             {
-                if (!modEnabled.Value || currentTechType == TechType.None || Inventory.main?.equipment?.GetCount(ScannerPrefab.Info.TechType) == 0)
+                if (!config.ModEnabled || currentTechType == TechType.None || Inventory.main?.equipment?.GetCount(ScannerPrefab.Info.TechType) == 0)
                     return true;
                 AccessTools.Method(typeof(uGUI_ResourceTracker), "GatherNodes").Invoke(__instance, new object[] { });
                 return false;
@@ -131,7 +124,7 @@ namespace MobileResourceScanner
 
         private static int GetCount(int count)
         {
-            if (!modEnabled.Value || count > 0)
+            if (!config.ModEnabled || count > 0)
                 return count;
             return Inventory.main.equipment.GetCount(ScannerPrefab.Info.TechType);
         }
@@ -141,19 +134,19 @@ namespace MobileResourceScanner
         {
             static bool Prefix(uGUI_ResourceTracker __instance, HashSet<ResourceTrackerDatabase.ResourceInfo> ___nodes, List<TechType> ___techTypes)
             {
-                if (!modEnabled.Value || currentTechType == TechType.None || Inventory.main?.equipment?.GetCount(ScannerPrefab.Info.TechType) == 0)
+                if (!config.ModEnabled || currentTechType == TechType.None || Inventory.main?.equipment?.GetCount(ScannerPrefab.Info.TechType) == 0)
                     return true;
 
                 Camera camera = MainCamera.camera;
                 ___nodes.Clear();
                 ___techTypes.Clear();
-                ResourceTrackerDatabase.GetTechTypesInRange(camera.transform.position, range.Value, new List<TechType>() { currentTechType });
-                ResourceTrackerDatabase.GetNodes(camera.transform.position, range.Value, currentTechType, ___nodes);
+                ResourceTrackerDatabase.GetTechTypesInRange(camera.transform.position, config.Range, new List<TechType>() { currentTechType });
+                ResourceTrackerDatabase.GetNodes(camera.transform.position, config.Range, currentTechType, ___nodes);
 
                 if (intervalChanged)
                 {
                     __instance.CancelInvoke("GatherNodes");
-                    __instance.InvokeRepeating("GatherNodes", interval.Value, interval.Value);
+                    __instance.InvokeRepeating("GatherNodes", config.Interval, config.Interval);
                     intervalChanged = false;
                 }
                 return false;
@@ -164,9 +157,9 @@ namespace MobileResourceScanner
         {
             static bool Prefix(uGUI_Equipment __instance, uGUI_EquipmentSlot instance, int button, Dictionary<uGUI_EquipmentSlot, InventoryItem> ___slots)
             {
-                if (!modEnabled.Value)
+                if (!config.ModEnabled)
                     return true;
-                if (!___slots.TryGetValue(instance, out var item) || item.techType != ScannerPrefab.Info.TechType || Inventory.main.GetItemAction(item, button) > ItemAction.None || button != menuButton.Value)
+                if (!___slots.TryGetValue(instance, out var item) || item.techType != ScannerPrefab.Info.TechType || Inventory.main.GetItemAction(item, button) > ItemAction.None || button != config.MenuButton)
                 {
                     return true;
                 }
@@ -181,9 +174,9 @@ namespace MobileResourceScanner
         {
             static void Postfix(StringBuilder sb, InventoryItem item)
             {
-                if (!modEnabled.Value || item.techType != ScannerPrefab.Info.TechType)
+                if (!config.ModEnabled || item.techType != ScannerPrefab.Info.TechType)
                     return;
-                AccessTools.Method(typeof(TooltipFactory), "WriteAction").Invoke(null, new object[] { sb, AccessTools.Field(typeof(TooltipFactory), $"stringButton{menuButton.Value}").GetValue(null), string.Format(openMenuString.Value, currentTechName) });
+                AccessTools.Method(typeof(TooltipFactory), "WriteAction").Invoke(null, new object[] { sb, AccessTools.Field(typeof(TooltipFactory), $"stringButton{config.MenuButton}").GetValue(null), string.Format(config.OpenMenuString, currentTechName) });
             }
         }
         
@@ -265,11 +258,11 @@ namespace MobileResourceScanner
                 else Destroy(button.gameObject);
             }
             var techs = new List<TechType>();
-            if (alwaysShowAllTechTypes.Value)
+            if (config.AlwaysShowAllTechTypes)
             {
                 foreach (TechType t in Enum.GetValues(typeof(TechType)))
                 {
-                    if (!requireScanned.Value || PDAScanner.ContainsCompleteEntry(t))
+                    if (!config.RequireScanned || PDAScanner.ContainsCompleteEntry(t))
                         techs.Add(t);
                 }
 
@@ -278,7 +271,7 @@ namespace MobileResourceScanner
             {
                 foreach (var t in ResourceTrackerDatabase.GetTechTypes())
                 {
-                    if (!requireScanned.Value || PDAScanner.ContainsCompleteEntry(t))
+                    if (!config.RequireScanned || PDAScanner.ContainsCompleteEntry(t))
                         techs.Add(t);
                 }
 
@@ -305,7 +298,7 @@ namespace MobileResourceScanner
             rth.localPosition = new Vector2(0, 362);
             rth.sizeDelta = new Vector2(545f, 100);
             var headerText = header.GetComponent<TextMeshProUGUI>();
-            headerText.text = menuHeader.Value;
+            headerText.text = config.MenuHeader;
             Dbgl($"Header size: {rth.sizeDelta}");
             
             foreach (var t in techs)
@@ -353,9 +346,9 @@ namespace MobileResourceScanner
             button.onClick = new Button.ButtonClickedEvent();
             button.onClick.AddListener(delegate ()
             {
-                currentTechType = t;
-                currentResource.Value = t.ToString();
-                currentTechName = Language.main.Get(t);
+                SetCurrentResource(t);
+                config.CurrentResource = t.ToString();
+                config.Save();
                 ErrorMessage.AddWarning($"Mobile scanner tech type set to {currentTechName}");
                 Destroy(menuGO);
             });
